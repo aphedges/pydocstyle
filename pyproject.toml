@@ -12,3 +12,5 @@ line_length = 79
 ignore_missing_imports = true
 strict_optional = true
 disallow_incomplete_defs = true
+strict = true
+follow_imports = 'skip'
