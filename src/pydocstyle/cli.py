@@ -3,7 +3,7 @@ import logging
 import sys
 
 from .checker import check
-from .config import ConfigurationParser, IllegalConfiguration
+from .config import ConfigurationParser, IllegalConfiguration, RunConfiguration
 from .utils import log
 from .violations import Error
 
@@ -16,7 +16,7 @@ class ReturnCode:
     invalid_options = 2
 
 
-def run_pydocstyle():
+def run_pydocstyle() -> int:
     log.setLevel(logging.DEBUG)
     conf = ConfigurationParser()
     setup_stream_handlers(conf.get_default_run_configuration())
@@ -52,13 +52,13 @@ def run_pydocstyle():
                     property_decorators=property_decorators,
                 )
             )
-    except IllegalConfiguration as error:
+    except IllegalConfiguration as ex:
         # An illegal configuration file was found during file generation.
-        log.error(error.args[0])
+        log.error(ex.args[0])
         return ReturnCode.invalid_options
 
     count = 0
-    for error in errors:  # type: ignore
+    for error in errors:
         if hasattr(error, 'code'):
             sys.stdout.write('%s\n' % error)
         count += 1
@@ -71,7 +71,7 @@ def run_pydocstyle():
     return exit_code
 
 
-def main():
+def main() -> None:
     """Run pydocstyle as a script."""
     try:
         sys.exit(run_pydocstyle())
@@ -79,11 +79,11 @@ def main():
         pass
 
 
-def setup_stream_handlers(conf):
+def setup_stream_handlers(conf: RunConfiguration) -> None:
     """Set up logging stream handlers according to the options."""
 
     class StdoutFilter(logging.Filter):
-        def filter(self, record):
+        def filter(self, record: logging.LogRecord) -> bool:
             return record.levelno in (logging.DEBUG, logging.INFO)
 
     log.handlers = []
