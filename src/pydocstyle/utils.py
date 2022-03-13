@@ -19,7 +19,7 @@ def is_blank(string: str) -> bool:
 
 
 def pairwise(
-    iterable: Iterable,
+    iterable: Iterable[Any],
     default_value: Any,
 ) -> Iterable[Tuple[Any, Any]]:
     """Return pairs of items from `iterable`.
