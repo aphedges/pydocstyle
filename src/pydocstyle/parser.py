@@ -7,7 +7,7 @@ from io import StringIO
 from itertools import chain, dropwhile
 from pathlib import Path
 from re import compile as re
-from typing import Tuple
+from typing import Any, Optional, Tuple, Type, Union
 
 from .utils import log
 
@@ -30,22 +30,22 @@ __all__ = (
 class ParseError(Exception):
     """An error parsing contents of a Python file."""
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "Cannot parse file."
 
 
 class UnexpectedTokenError(ParseError):
-    def __init__(self, token, expected_kind):
+    def __init__(self, token: 'Token', expected_kind: 'TokenKind'):
         self.token = token
         self.expected_kind = expected_kind
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "Unexpected token {}, expected {}".format(
             self.token, self.expected_kind
         )
 
 
-def humanize(string):
+def humanize(string: str) -> str:
     return re(r'(.)([A-Z]+)').sub(r'\1 \2', string).lower()
 
 
@@ -64,13 +64,13 @@ class Value:
             )
         vars(self).update(zip(self._fields, args))
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(repr(self))
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> bool:
         return other and vars(self) == vars(other)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         kwargs = ', '.join(
             '{}={!r}'.format(field, getattr(self, field))
             for field in self._fields
@@ -81,7 +81,7 @@ class Value:
 class Definition(Value):
     """A Python source code definition (could be class, function, etc)."""
 
-    _fields = (
+    _fields: Tuple[str, ...] = (
         'name',
         '_source',
         'start',
@@ -91,13 +91,13 @@ class Definition(Value):
         'children',
         'parent',
         'skipped_error_codes',
-    )  # type: Tuple[str, ...]
+    )
 
-    _human = property(lambda self: humanize(type(self).__name__))
-    kind = property(lambda self: self._human.split()[-1])
+    _human: str = property(lambda self: humanize(type(self).__name__))
+    kind: str = property(lambda self: self._human.split()[-1])
     module = property(lambda self: self.parent.module)
     dunder_all = property(lambda self: self.module.dunder_all)
-    _slice = property(lambda self: slice(self.start - 1, self.end))
+    _slice: slice = property(lambda self: slice(self.start - 1, self.end))
     is_class = False
 
     def __iter__(self):
@@ -111,21 +111,21 @@ class Definition(Value):
         return self.start
 
     @property
-    def _publicity(self):
+    def _publicity(self) -> str:
         return {True: 'public', False: 'private'}[self.is_public]
 
     @property
-    def source(self):
+    def source(self) -> str:
         """Return the source code for the definition."""
         full_src = self._source[self._slice]
 
-        def is_empty_or_comment(line):
+        def is_empty_or_comment(line: str) -> bool:
             return line.strip() == '' or line.strip().startswith('#')
 
         filtered_src = dropwhile(is_empty_or_comment, reversed(full_src))
         return ''.join(reversed(list(filtered_src)))
 
-    def __str__(self):
+    def __str__(self) -> str:
         out = f'in {self._publicity} {self._human} `{self.name}`'
         if self.skipped_error_codes:
             out += f' (skipping {self.skipped_error_codes})'
@@ -149,12 +149,12 @@ class Module(Definition):
         'future_imports',
         'skipped_error_codes',
     )
-    _nest = staticmethod(lambda s: {'def': Function, 'class': Class}[s])
+    _nest: Type = staticmethod(lambda s: {'def': Function, 'class': Class}[s])
     module = property(lambda self: self)
     dunder_all = property(lambda self: self._dunder_all)
 
     @property
-    def is_public(self):
+    def is_public(self) -> bool:
         """Return True iff the module is considered public.
 
         This helps determine if it requires a docstring.
@@ -164,7 +164,7 @@ class Module(Definition):
             module_name
         )
 
-    def _is_inside_private_package(self):
+    def _is_inside_private_package(self) -> bool:
         """Return True if the module is inside a private package."""
         path = Path(self.name).parent  # Ignore the actual module's name.
         syspath = [Path(p) for p in sys.path]  # Convert to pathlib.Path.
@@ -177,17 +177,17 @@ class Module(Definition):
 
         return False
 
-    def _is_public_name(self, module_name):
+    def _is_public_name(self, module_name) -> bool:
         """Determine whether a "module name" (i.e. module or package name) is public."""
         return not module_name.startswith('_') or (
             module_name.startswith('__') and module_name.endswith('__')
         )
 
-    def _is_private_name(self, module_name):
+    def _is_private_name(self, module_name) -> bool:
         """Determine whether a "module name" (i.e. module or package name) is private."""
         return not self._is_public_name(module_name)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return 'at module level'
 
 
@@ -198,12 +198,12 @@ class Package(Module):
 class Function(Definition):
     """A Python source code function."""
 
-    _nest = staticmethod(
+    _nest: Type = staticmethod(
         lambda s: {'def': NestedFunction, 'class': NestedClass}[s]
     )
 
     @property
-    def is_public(self):
+    def is_public(self) -> bool:
         """Return True iff this function should be considered public."""
         if self.dunder_all is not None:
             return self.name in self.dunder_all
@@ -211,13 +211,13 @@ class Function(Definition):
             return not self.name.startswith('_')
 
     @property
-    def is_overload(self):
+    def is_overload(self) -> bool:
         """Return True iff the method decorated with overload."""
         return any(
             decorator.name == "overload" for decorator in self.decorators
         )
 
-    def is_property(self, property_decorator_names):
+    def is_property(self, property_decorator_names) -> bool:
         """Return True if the method is decorated with any property decorator."""
         return any(
             decorator.name in property_decorator_names
@@ -225,7 +225,7 @@ class Function(Definition):
         )
 
     @property
-    def is_test(self):
+    def is_test(self) -> bool:
         """Return True if this function is a test function/method.
 
         We exclude tests from the imperative mood check, because to phrase
@@ -239,14 +239,14 @@ class Function(Definition):
 class NestedFunction(Function):
     """A Python source code nested function."""
 
-    is_public = False
+    is_public: bool = False
 
 
 class Method(Function):
     """A Python source code method."""
 
     @property
-    def is_magic(self):
+    def is_magic(self) -> bool:
         """Return True iff this method is a magic method (e.g., `__str__`)."""
         return (
             self.name.startswith('__')
@@ -255,12 +255,12 @@ class Method(Function):
         )
 
     @property
-    def is_init(self):
+    def is_init(self) -> bool:
         """Return True iff this method is `__init__`."""
         return self.name == '__init__'
 
     @property
-    def is_public(self):
+    def is_public(self) -> bool:
         """Return True iff this method should be considered public."""
         # Check if we are a setter/deleter method, and mark as private if so.
         for decorator in self.decorators:
@@ -275,7 +275,7 @@ class Method(Function):
         return self.parent.is_public and name_is_public
 
     @property
-    def is_static(self):
+    def is_static(self) -> bool:
         """Return True iff the method is static."""
         for decorator in self.decorators:
             if decorator.name == "staticmethod":
@@ -286,7 +286,7 @@ class Method(Function):
 class Class(Definition):
     """A Python source code class."""
 
-    _nest = staticmethod(lambda s: {'def': Method, 'class': NestedClass}[s])
+    _nest: Type = staticmethod(lambda s: {'def': Method, 'class': NestedClass}[s])
     is_public = Function.is_public
     is_class = True
 
@@ -295,7 +295,7 @@ class NestedClass(Class):
     """A Python source code nested class."""
 
     @property
-    def is_public(self):
+    def is_public(self) -> bool:
         """Return True iff this class should be considered public."""
         return (
             not self.name.startswith('_')
@@ -332,7 +332,7 @@ VARIADIC_MAGIC_METHODS = ('__init__', '__call__', '__new__')
 class AllError(Exception):
     """Raised when there is a problem with __all__ when parsing."""
 
-    def __init__(self, message):
+    def __init__(self, message: str):
         """Initialize the error with a more specific message."""
         Exception.__init__(
             self,
@@ -364,7 +364,7 @@ class TokenStream:
         self.log = log
         self.got_logical_newline = True
 
-    def move(self):
+    def move(self) -> 'Token':
         previous = self.current
         current = self._next_from_generator()
         self.current = None if current is None else Token(*current)
@@ -377,7 +377,7 @@ class TokenStream:
         )
         return previous
 
-    def _next_from_generator(self):
+    def _next_from_generator(self) -> Optional[tk.TokenInfo]:
         try:
             return next(self._generator, None)
         except (SyntaxError, tk.TokenError):
@@ -394,25 +394,31 @@ class TokenStream:
 
 
 class TokenKind(int):
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "tk.{}".format(tk.tok_name[self])
 
 
 class Token(Value):
+    kind: TokenKind
+    value: str
+    start: Tuple[int, int]
+    end: Tuple[int, int]
+    source: int
+
     _fields = 'kind value start end source'.split()
 
     def __init__(self, *args):
         super().__init__(*args)
         self.kind = TokenKind(self.kind)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.kind!r} ({self.value})"
 
 
 class Parser:
     """A Python source code parser."""
 
-    def parse(self, filelike, filename):
+    def parse(self, filelike, filename) -> Union[Module, Package]:
         """Parse the given file-like object and return its Module object."""
         self.log = log
         self.source = filelike.readlines()
@@ -424,7 +430,7 @@ class Parser:
         self.stream = TokenStream(StringIO(src))
         self.filename = filename
         self.dunder_all = None
-        self.dunder_all_error = None
+        self.dunder_all_error: Optional[str] = None
         self.future_imports = set()
         self._accumulated_decorators = []
         return self.parse_module()
@@ -434,16 +440,16 @@ class Parser:
         """Call the parse method."""
         return self.parse(*args, **kwargs)
 
-    current = property(lambda self: self.stream.current)
+    current: Token = property(lambda self: self.stream.current)
     line = property(lambda self: self.stream.line)
 
-    def consume(self, kind):
+    def consume(self, kind) -> None:
         """Consume one token and verify it is of the expected kind."""
         next_token = self.stream.move()
         if next_token.kind != kind:
             raise UnexpectedTokenError(token=next_token, expected_kind=kind)
 
-    def leapfrog(self, kind, value=None):
+    def leapfrog(self, kind, value=None) -> None:
         """Skip tokens in the stream until a certain token kind is reached.
 
         If `value` is specified, tokens whose values are different will also
@@ -457,7 +463,7 @@ class Parser:
                 return
             self.stream.move()
 
-    def parse_docstring(self):
+    def parse_docstring(self) -> Optional[Docstring]:
         """Parse a single docstring and return its value."""
         self.log.debug("parsing docstring, token is %s", self.current)
         while self.current.kind in (tk.COMMENT, tk.NEWLINE, tk.NL):
@@ -475,7 +481,7 @@ class Parser:
             return docstring
         return None
 
-    def parse_decorators(self):
+    def parse_decorators(self) -> None:
         """Parse decorators into self._accumulated_decorators.
 
         Called after first @ is found.
@@ -558,7 +564,7 @@ class Parser:
             else:
                 self.stream.move()
 
-    def parse_dunder_all(self):
+    def parse_dunder_all(self) -> None:
         """Parse the __all__ definition in a module."""
         assert self.current.value == '__all__'
         self.consume(tk.NAME)
@@ -626,7 +632,7 @@ class Parser:
                 return
             self.stream.move()
 
-    def parse_module(self):
+    def parse_module(self) -> Union[Module, Package]:
         """Parse a module (and its children) and return a Module object."""
         self.log.debug("parsing module.")
         start = self.line
@@ -724,7 +730,7 @@ class Parser:
         )
         return definition
 
-    def parse_skip_comment(self):
+    def parse_skip_comment(self) -> str:
         """Parse a definition comment for noqa skips."""
         skipped_error_codes = ''
         while self.current.kind in (tk.COMMENT, tk.NEWLINE, tk.NL):
@@ -747,7 +753,7 @@ class Parser:
 
         return skipped_error_codes
 
-    def check_current(self, kind=None, value=None):
+    def check_current(self, kind: Optional[TokenKind] = None, value=None) -> None:
         """Verify the current token is of type `kind` and equals `value`."""
         msg = textwrap.dedent(
             """
@@ -765,7 +771,7 @@ class Parser:
         value_valid = self.current.value == value if value else True
         assert kind_valid and value_valid, msg
 
-    def parse_from_import_statement(self):
+    def parse_from_import_statement(self) -> None:
         """Parse a 'from x import y' statement.
 
         The purpose is to find __future__ statements.
@@ -775,7 +781,7 @@ class Parser:
         is_future_import = self._parse_from_import_source()
         self._parse_from_import_names(is_future_import)
 
-    def _parse_from_import_source(self):
+    def _parse_from_import_source(self) -> bool:
         """Parse the 'from x import' part in a 'from x import y' statement.
 
         Return true iff `x` is __future__.
@@ -797,11 +803,11 @@ class Parser:
         self.stream.move()
         return is_future_import
 
-    def _parse_from_import_names(self, is_future_import):
+    def _parse_from_import_names(self, is_future_import: bool) -> None:
         """Parse the 'y' part in a 'from x import y' statement."""
         if self.current.value == '(':
             self.consume(tk.OP)
-            expected_end_kinds = (tk.OP,)
+            expected_end_kinds: Tuple[int, ...] = (tk.OP,)
         else:
             expected_end_kinds = (tk.NEWLINE, tk.ENDMARKER)
         while self.current.kind not in expected_end_kinds and not (
