@@ -1,9 +1,6 @@
-Use `pip <http://pip-installer.org>`_ or easy_install:
+Use `pip <https://pip.pypa.io>`_:
 
 
 .. code::
 
     pip install pydocstyle
-
-Alternatively, you can use ``pydocstyle.py`` source file
-directly - it is self-contained.
